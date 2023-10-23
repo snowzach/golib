@@ -1,103 +1,81 @@
 package log
 
-import "go.uber.org/zap"
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"runtime"
+	"time"
+)
 
-func With(args ...interface{}) *zap.SugaredLogger {
-	return Logger.With(args...)
-}
-
-func Debug(args ...interface{}) {
-	funcLogger.Debug(args...)
+func Debug(msg string, args ...interface{}) {
+	LogSkip(context.Background(), Logger, slog.LevelDebug, 3, msg, args...)
 }
 
 func Debugf(template string, args ...interface{}) {
-	funcLogger.Debugf(template, args...)
+	LogSkip(context.Background(), Logger, slog.LevelDebug, 3, fmt.Sprintf(template, args...))
 }
 
-func Debugw(msg string, keysAndValues ...interface{}) {
-	funcLogger.Debugw(msg, keysAndValues...)
-}
-
-func Info(args ...interface{}) {
-	funcLogger.Info(args...)
+func Info(msg string, args ...interface{}) {
+	LogSkip(context.Background(), Logger, slog.LevelInfo, 3, msg, args...)
 }
 
 func Infof(template string, args ...interface{}) {
-	funcLogger.Infof(template, args...)
+	LogSkip(context.Background(), Logger, slog.LevelInfo, 3, fmt.Sprintf(template, args...))
 }
 
-func Infow(msg string, keysAndValues ...interface{}) {
-	funcLogger.Infow(msg, keysAndValues...)
-}
-
-func Warn(args ...interface{}) {
-	funcLogger.Warn(args...)
+func Warn(msg string, args ...interface{}) {
+	LogSkip(context.Background(), Logger, slog.LevelWarn, 3, msg, args...)
 }
 
 func Warnf(template string, args ...interface{}) {
-	funcLogger.Warnf(template, args...)
+	LogSkip(context.Background(), Logger, slog.LevelWarn, 3, fmt.Sprintf(template, args...))
 }
 
-func Warnw(msg string, keysAndValues ...interface{}) {
-	funcLogger.Warnw(msg, keysAndValues...)
-}
-
-func Error(args ...interface{}) {
-	funcLogger.Error(args...)
+func Error(msg string, args ...interface{}) {
+	LogSkip(context.Background(), Logger, slog.LevelError, 3, msg, args...)
 }
 
 func Errorf(template string, args ...interface{}) {
-	funcLogger.Errorf(template, args...)
+	LogSkip(context.Background(), Logger, slog.LevelError, 3, fmt.Sprintf(template, args...))
 }
 
-func Errorw(msg string, keysAndValues ...interface{}) {
-	funcLogger.Errorw(msg, keysAndValues...)
-}
-
-func Fatal(args ...interface{}) {
-	funcLogger.Fatal(args...)
+func Fatal(msg string, args ...interface{}) {
+	LogSkip(context.Background(), Logger, slog.LevelError, 3, msg, args...)
+	os.Exit(1)
 }
 
 func Fatalf(template string, args ...interface{}) {
-	funcLogger.Fatalf(template, args...)
+	LogSkip(context.Background(), Logger, slog.LevelError, 3, fmt.Sprintf(template, args...))
+	os.Exit(1)
 }
 
-func Fatalw(msg string, keysAndValues ...interface{}) {
-	funcLogger.Fatalw(msg, keysAndValues...)
-}
-
-func Panic(args ...interface{}) {
-	funcLogger.Panic(args...)
+func Panic(msg string, args ...interface{}) {
+	LogSkip(context.Background(), Logger, slog.LevelError, 3, msg, args...)
+	panic(nil)
 }
 
 func Panicf(template string, args ...interface{}) {
-	funcLogger.Panicf(template, args...)
-}
-
-func Panicw(msg string, keysAndValues ...interface{}) {
-	funcLogger.Panicw(msg, keysAndValues...)
-}
-
-func DPanic(args ...interface{}) {
-	funcLogger.DPanic(args...)
-}
-
-func DPanicf(template string, args ...interface{}) {
-	funcLogger.DPanicf(template, args...)
-}
-
-func DPanicw(msg string, keysAndValues ...interface{}) {
-	funcLogger.DPanicw(msg, keysAndValues...)
+	LogSkip(context.Background(), Logger, slog.LevelError, 3, fmt.Sprintf(template, args...))
+	panic(nil)
 }
 
 func Println(msg string) {
-	funcLogger.Info(msg)
+	LogSkip(context.Background(), Logger, slog.LevelInfo, 3, msg)
 }
 
 func Printf(template string, args ...interface{}) {
-	funcLogger.Infof(template, args...)
+	LogSkip(context.Background(), Logger, slog.LevelInfo, 3, fmt.Sprintf(template, args...))
 }
 
-func Flush() {
-	_ = Base.Sync()
+func LogSkip(ctx context.Context, logger *slog.Logger, level slog.Level, skip int, msg string, args ...interface{}) {
+	if !logger.Enabled(ctx, level) {
+		return
+	}
+	var pcs [1]uintptr
+	runtime.Callers(skip, pcs[:]) // skip [Callers, Infof]
+	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
+	r.Add(args...)
+	_ = logger.Handler().Handle(context.Background(), r)
 }

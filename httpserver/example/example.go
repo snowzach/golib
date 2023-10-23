@@ -1,12 +1,13 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/cors"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/snowzach/golib/httpserver"
 	"github.com/snowzach/golib/httpserver/logger"
@@ -21,9 +22,9 @@ func main() {
 		Level:    "info",
 		Encoding: "console",
 		Color:    true,
-		DevMode:  true,
 	}); err != nil {
-		log.Fatalf("could not initialize logger: %v", err)
+		slog.Error("could not initialize logger: %v", err)
+		os.Exit(1)
 	}
 
 	// Use the chi router (you can use any router you want)
@@ -35,12 +36,12 @@ func main() {
 
 	// Request logger
 	var loggerConfig = logger.Config{
-		Level:        zapcore.InfoLevel,
+		Level:        slog.LevelInfo,
 		RequestBody:  true,
 		ResponseBody: true,
 		IgnorePaths:  []string{},
 	}
-	router.Use(logger.LoggerStandardMiddleware(log.Logger.Named("server").Desugar(), loggerConfig))
+	router.Use(logger.LoggerStandardMiddleware(log.Logger.With("context", "server"), loggerConfig))
 
 	// CORS handler for REST APIs
 	var corsOptions = cors.Options{
@@ -54,6 +55,11 @@ func main() {
 
 	// Enable metrics for server
 	router.Use(metrics.MetricsMiddleware(metrics.Config{}))
+
+	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("OK"))
+		w.WriteHeader(http.StatusOK)
+	})
 
 	// Create a server
 	s, err := httpserver.New(
@@ -78,6 +84,5 @@ func main() {
 	signal.Stop.OnSignal(signal.DefaultStopSignals...)
 	<-signal.Stop.Chan() // Wait until Stop
 	signal.Stop.Wait()   // Wait until everyone cleans up
-	log.Flush()          // Flush the logger
 
 }

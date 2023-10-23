@@ -2,15 +2,15 @@ package conf
 
 import (
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strconv"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/shopspring/decimal"
+	"github.com/snowzach/golib/log"
 	"github.com/spf13/cast"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 // DefaultDecodeHooks are the default decoding hooks used to unmarshal into a struct.
@@ -25,7 +25,7 @@ func DefaultDecodeHooks(extras ...mapstructure.DecodeHookFunc) []mapstructure.De
 		mapstructure.StringToIPHookFunc(),
 		mapstructure.StringToIPNetHookFunc(),
 		DecimalHookFunc(),
-		ZapLogLevelHookFunc(),
+		SLogLevelHookFunc(),
 	}, extras...)
 }
 
@@ -59,11 +59,11 @@ func DecimalHookFunc() mapstructure.DecodeHookFunc {
 	}
 }
 
-// ZapLogLevelHookFunc()
-func ZapLogLevelHookFunc() mapstructure.DecodeHookFunc {
+// SLogLevelHookFunc decodes string config into a slog.Level.
+func SLogLevelHookFunc() mapstructure.DecodeHookFunc {
 	return func(f reflect.Type, t reflect.Type, v interface{}) (interface{}, error) {
 
-		if t != reflect.TypeOf(zapcore.Level(1)) && t != reflect.TypeOf(zap.AtomicLevel{}) {
+		if t != reflect.TypeOf(slog.LevelInfo) {
 			return v, nil
 		}
 		levelString, ok := v.(string)
@@ -71,20 +71,7 @@ func ZapLogLevelHookFunc() mapstructure.DecodeHookFunc {
 			return nil, fmt.Errorf("could not parse log level of type %T", v)
 		}
 
-		var level zapcore.Level
-		if err := level.Set(levelString); err != nil {
-			return nil, fmt.Errorf("could not parse log level: %s", levelString)
-		}
-
-		// If it's a regular level return that
-		if t == reflect.TypeOf(zapcore.Level(1)) {
-			return level, nil
-		}
-
-		// Otherwise return an atomic level
-		var atomicLevel zap.AtomicLevel
-		atomicLevel.SetLevel(level)
-		return atomicLevel, nil
+		return log.ParseLogLevel(levelString)
 
 	}
 }

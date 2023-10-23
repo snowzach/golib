@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 )
 
@@ -110,6 +109,6 @@ func errString(err error) string {
 }
 
 func DecodeJSON(r io.Reader, v interface{}) error {
-	defer io.Copy(ioutil.Discard, r)
+	defer io.Copy(io.Discard, r)
 	return json.NewDecoder(r).Decode(v)
 }

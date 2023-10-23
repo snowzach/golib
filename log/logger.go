@@ -1,80 +1,110 @@
 package log
 
 import (
-	"fmt"
-
-	"github.com/blendle/zapdriver"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"errors"
+	"log/slog"
+	"os"
+	"strconv"
+	"strings"
 )
 
 // Defaults
 var (
-	Base       = zap.NewNop()
-	Logger     = Base.Sugar()
-	funcLogger = Base.WithOptions(zap.AddCallerSkip(1)).Sugar()
+	// Sane default logger setup
+	Logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		AddSource: false,
+		Level:     slog.LevelInfo,
+	}))
+
+	ErrUnknownLogLevel    = errors.New("unknown log level")
+	ErrUnknownLogEncoding = errors.New("unknown log encoding")
+)
+
+const (
+	EncodingText = "text"
+	EncodingJSON = "json"
 )
 
 type LoggerConfig struct {
-	Level             string `conf:"level"`
-	Encoding          string `conf:"encoding"`
-	Color             bool   `conf:"color"`
-	DevMode           bool   `conf:"dev_mode"`
-	DisableCaller     bool   `conf:"disable_caller"`
-	DisableStacktrace bool   `conf:"disable_stacktrace"`
+	Level    string `conf:"level"`
+	Encoding string `conf:"encoding"`
+	Color    bool   `conf:"color"`
 }
 
 // InitLogger loads a global logger based on a configuration
 func InitLogger(c *LoggerConfig) error {
-
-	logConfig := zap.NewProductionConfig()
-	logConfig.Sampling = nil
-
-	// Log Level
-	var logLevel zapcore.Level
-	if err := logLevel.Set(c.Level); err != nil {
-		return fmt.Errorf("could not determine log level: %w", err)
-	}
-	logConfig.Level.SetLevel(logLevel)
-
-	// Handle different logger encodings
-	switch c.Encoding {
-	case "stackdriver":
-		logConfig.Encoding = "json"
-		logConfig.EncoderConfig = zapdriver.NewDevelopmentEncoderConfig()
-	default:
-		logConfig.Encoding = c.Encoding
-		// Enable Color
-		if c.Color {
-			logConfig.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		}
-		logConfig.DisableStacktrace = c.DisableStacktrace
-		// Use sane timestamp when logging to console
-		if logConfig.Encoding == "console" {
-			logConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		}
-
-		// JSON Fields
-		logConfig.EncoderConfig.MessageKey = "msg"
-		logConfig.EncoderConfig.LevelKey = "level"
-		logConfig.EncoderConfig.CallerKey = "caller"
-	}
-
-	// Settings
-	logConfig.Development = c.DevMode
-	logConfig.DisableCaller = c.DisableCaller
-
-	// Build the logger
-	globalLogger, err := logConfig.Build()
+	level, err := ParseLogLevel(c.Level)
 	if err != nil {
-		return fmt.Errorf("could not build log config: %w", err)
+		return err
 	}
-	zap.ReplaceGlobals(globalLogger)
 
-	Base = zap.L()
-	Logger = Base.Sugar()
-	funcLogger = Base.WithOptions(zap.AddCallerSkip(1)).Sugar()
-
+	var logger *slog.Logger
+	switch c.Encoding {
+	case EncodingText, "console":
+		logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			AddSource: true,
+			Level:     level,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.SourceKey {
+					if source, ok := a.Value.Any().(*slog.Source); ok {
+						a.Value = slog.StringValue(TrimSource(source.File, 2) + ":" + strconv.Itoa(source.Line))
+					}
+				}
+				if a.Key == slog.LevelKey && c.Color {
+					if level, ok := a.Value.Any().(slog.Level); ok {
+						switch level {
+						case slog.LevelDebug:
+							a.Value = slog.StringValue("DEBUGGGG")
+						}
+					}
+				}
+				return a
+			},
+		}))
+	case EncodingJSON:
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			AddSource: true,
+			Level:     level,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.SourceKey {
+					if source, ok := a.Value.Any().(*slog.Source); ok {
+						a.Value = slog.StringValue(TrimSource(source.File, 2) + ":" + strconv.Itoa(source.Line))
+					}
+				}
+				return a
+			},
+		}))
+	}
+	Logger = logger
+	slog.SetDefault(logger)
 	return nil
+}
 
+func TrimSource(source string, parts int) string {
+	i := len(source) - 1
+	for ; i > 0; i-- {
+		if source[i] == os.PathSeparator {
+			parts--
+			if parts == 0 {
+				return source[i+1:]
+			}
+		}
+	}
+	return source
+}
+
+// ParseLogLevel is used to parse configuration options into a log level.
+func ParseLogLevel(level string) (slog.Level, error) {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "err", "error":
+		return slog.LevelError, nil
+	default:
+		return 0, ErrUnknownLogLevel
+	}
 }

@@ -2,10 +2,15 @@ package log
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/lmittmann/tint"
 )
 
 // Defaults
@@ -28,56 +33,67 @@ const (
 type LoggerConfig struct {
 	Level    string `conf:"level"`
 	Encoding string `conf:"encoding"`
-	Color    bool   `conf:"color"`
+	Color    bool   `conf:"color"` // Only valid for console encoding.
+	Output   string `conf:"output"`
 }
 
 // InitLogger loads a global logger based on a configuration
 func InitLogger(c *LoggerConfig) error {
+	// Parse the level
 	level, err := ParseLogLevel(c.Level)
 	if err != nil {
 		return err
 	}
 
+	// Determine the output
+	var w io.Writer
+	switch c.Output {
+	case "stderr":
+		w = os.Stderr
+	case "stdout":
+		w = os.Stdout
+	default: // Otherwise assume it's a log file path
+		if w, err = os.Open(c.Output); err != nil {
+			return fmt.Errorf("log output file open error: %w", err)
+		}
+	}
+
 	var logger *slog.Logger
 	switch c.Encoding {
 	case EncodingText, "console":
-		logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			AddSource: true,
-			Level:     level,
-			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-				if a.Key == slog.SourceKey {
-					if source, ok := a.Value.Any().(*slog.Source); ok {
-						a.Value = slog.StringValue(TrimSource(source.File, 2) + ":" + strconv.Itoa(source.Line))
-					}
-				}
-				if a.Key == slog.LevelKey && c.Color {
-					if level, ok := a.Value.Any().(slog.Level); ok {
-						switch level {
-						case slog.LevelDebug:
-							a.Value = slog.StringValue("DEBUGGGG")
-						}
-					}
-				}
-				return a
-			},
-		}))
+		if c.Color {
+			logger = slog.New(tint.NewHandler(w, &tint.Options{
+				AddSource:   true,
+				Level:       level,
+				ReplaceAttr: ReplaceAttrTrimSource,
+				TimeFormat:  time.RFC3339Nano,
+			}))
+		} else {
+			logger = slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{
+				AddSource:   true,
+				Level:       level,
+				ReplaceAttr: ReplaceAttrTrimSource,
+			}))
+		}
 	case EncodingJSON:
-		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			AddSource: true,
-			Level:     level,
-			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-				if a.Key == slog.SourceKey {
-					if source, ok := a.Value.Any().(*slog.Source); ok {
-						a.Value = slog.StringValue(TrimSource(source.File, 2) + ":" + strconv.Itoa(source.Line))
-					}
-				}
-				return a
-			},
+		logger = slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
+			AddSource:   true,
+			Level:       level,
+			ReplaceAttr: ReplaceAttrTrimSource,
 		}))
 	}
 	Logger = logger
 	slog.SetDefault(logger)
 	return nil
+}
+
+func ReplaceAttrTrimSource(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == slog.SourceKey {
+		if source, ok := a.Value.Any().(*slog.Source); ok {
+			a.Value = slog.StringValue(TrimSource(source.File, 2) + ":" + strconv.Itoa(source.Line))
+		}
+	}
+	return a
 }
 
 func TrimSource(source string, parts int) string {

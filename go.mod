@@ -10,6 +10,7 @@ require (
 	github.com/jackc/pgx/v4 v4.18.1
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/knadh/koanf v1.5.0
+	github.com/lmittmann/tint v1.0.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/prometheus/client_golang v1.17.0
 	github.com/rs/cors v1.10.1
